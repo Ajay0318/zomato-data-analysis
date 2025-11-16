@@ -1,4 +1,4 @@
-Zomato Data Exploration & Analysis Using SQL (Completely Reframed Version)
+Zomato Data Exploration & Analysis Using SQL 
 
 To uncover meaningful patterns in Zomato’s restaurant ecosystem, I conducted an in-depth SQL exploration of a dataset with over 9,000 restaurant records. The dataset included fields such as restaurant identifiers, names, city details, locations, cuisines, and other attributes.
 
