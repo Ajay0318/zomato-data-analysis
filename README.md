@@ -18,15 +18,13 @@ Key questions answered:
 ## Dataset
 
 - Source file used: `zomato_dataset.csv`
-- The analysis is based on the uploaded Zomato dataset.
 - A country lookup mapping was recreated to support country-level analysis.
 
 ## Files Included
 
-- `all_queries.sql` — all SQL queries in one file
-- `sql/` — individual SQL files for each analysis question
+- `ZOMATO_DATA_ANALYSIS.sql` — all SQL queries in one file
+- `ZOMATO_DATA_Exploartion.sql` — Exploratory Data Analysis
 - `screenshots/` — screenshots of SQL query outputs
-- `query_explanations.md` — short explanation of each query and output
 
 ## SQL Analysis Performed
 
@@ -88,19 +86,3 @@ Lists the highest rated Indian restaurants with moderate pricing.
 - CSV dataset
 - GitHub for project hosting
 
-## How to Add This to GitHub
-
-1. Create a new GitHub repository.
-2. Upload all files from this project folder.
-3. Keep `README.md` in the root of the repository.
-4. Make sure the `screenshots/` folder is uploaded so images render correctly in GitHub.
-
-## Resume Project Title Suggestion
-
-**Zomato Data Analysis Using SQL**
-
-## Resume Bullet Suggestions
-
-- Analyzed Zomato restaurant data using SQL to uncover country-level distribution, top-performing localities, cuisine popularity, and booking behavior.
-- Wrote analytical SQL queries using filtering, grouping, aggregation, and sorting to derive business insights from restaurant data.
-- Identified patterns in online delivery support, table booking impact on ratings, and moderately priced high-rated Indian restaurants.
