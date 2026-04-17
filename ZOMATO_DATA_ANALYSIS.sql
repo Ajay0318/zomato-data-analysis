@@ -1,203 +1,117 @@
---ANALYSIS QUESTIONS
-USE project;
-
-
-SELECT * FROM [dbo].[ZomatoData1]
-
-
-
---ROLLING/MOVING COUNT OF RESTAURANTS IN INDIAN CITIES
-SELECT [COUNTRY_NAME],[City],[Locality],COUNT([Locality]) TOTAL_REST,
-SUM(COUNT([Locality])) OVER(PARTITION BY [City] ORDER BY [Locality] DESC)
-FROM [dbo].[ZomatoData1]
-WHERE [COUNTRY_NAME] = 'INDIA'
-GROUP BY  [COUNTRY_NAME],[City],[Locality]
-
-
-
---SEARCHING FOR PERCENTAGE OF RESTAURANTS IN ALL THE COUNTRIES
-CREATE OR ALTER VIEW TOTAL_COUNT
-AS
-(
-SELECT DISTINCT([COUNTRY_NAME]),COUNT(CAST([RestaurantID]AS NUMERIC)) OVER() TOTAL_REST
-FROM [dbo].[ZomatoData1]
---ORDER BY 1
-)
-SELECT * FROM TOTAL_COUNT
-
-FINAL QUERY AFTER CREATING VIEW
-WITH CT1 AS
-(
-SELECT [COUNTRY_NAME], COUNT(CAST([RestaurantID]AS NUMERIC)) REST_COUNT
-FROM [dbo].[ZomatoData1]
-GROUP BY [COUNTRY_NAME]
-)
-SELECT A.[COUNTRY_NAME],A.[REST_COUNT] ,ROUND(CAST(A.[REST_COUNT] AS DECIMAL)/CAST(B.[TOTAL_REST]AS DECIMAL)*100,2)
-FROM CT1 A JOIN TOTAL_COUNT B
-ON A.[COUNTRY_NAME] = B.[COUNTRY_NAME]
-ORDER BY 3 DESC
-
-
-
---WHICH COUNTRIES AND HOW MANY RESTAURANTS WITH PERCENTAGE PROVIDES ONLINE DELIVERY OPTION
-CREATE OR ALTER VIEW COUNTRY_REST
-AS(
-SELECT [COUNTRY_NAME], COUNT(CAST([RestaurantID]AS NUMERIC)) REST_COUNT
-FROM [dbo].[ZomatoData1]
-GROUP BY [COUNTRY_NAME]
-)
-SELECT * FROM COUNTRY_REST
-ORDER BY 2 DESC
-
-SELECT A.[COUNTRY_NAME],COUNT(A.[RestaurantID]) TOTAL_REST, 
-ROUND(COUNT(CAST(A.[RestaurantID] AS DECIMAL))/CAST(B.[REST_COUNT] AS DECIMAL)*100, 2)
-FROM [dbo].[ZomatoData1] A JOIN COUNTRY_REST B
-ON A.[COUNTRY_NAME] = B.[COUNTRY_NAME]
-WHERE A.[Has_Online_delivery] = 'YES'
-GROUP BY A.[COUNTRY_NAME],B.REST_COUNT
-ORDER BY 2 DESC
-
-
-
---FINDING FROM WHICH CITY AND LOCALITY IN INDIA WHERE THE MAX RESTAURANTS ARE LISTED IN ZOMATO
-WITH CT1
-AS
-(
-SELECT [City],[Locality],COUNT([RestaurantID]) REST_COUNT
-FROM [dbo].[ZomatoData1]
-WHERE [COUNTRY_NAME] = 'INDIA'
-GROUP BY CITY,LOCALITY
---ORDER BY 3 DESC
-)
-SELECT [Locality],REST_COUNT FROM CT1 WHERE REST_COUNT = (SELECT MAX(REST_COUNT) FROM CT1)
-
-
-
---TYPES OF FOODS ARE AVAILABLE IN INDIA WHERE THE MAX RESTAURANTS ARE LISTED IN ZOMATO
-WITH CT1
-AS
-(
-SELECT [City],[Locality],COUNT([RestaurantID]) REST_COUNT
-FROM [dbo].[ZomatoData1]
-WHERE [COUNTRY_NAME] = 'INDIA'
-GROUP BY CITY,LOCALITY
---ORDER BY 3 DESC
+-- 01_country_percentage.sql
+WITH total_count AS (
+  SELECT COUNT(*) AS total_rest FROM ZomatoData1
 ),
-CT2 AS (
-SELECT [Locality],REST_COUNT FROM CT1 WHERE REST_COUNT = (SELECT MAX(REST_COUNT) FROM CT1)
+country_counts AS (
+  SELECT COUNTRY_NAME, COUNT(RestaurantID) AS rest_count
+  FROM ZomatoData1
+  GROUP BY COUNTRY_NAME
+)
+SELECT c.COUNTRY_NAME,
+       c.rest_count,
+       ROUND(100.0 * c.rest_count / t.total_rest, 2) AS pct_of_restaurants
+FROM country_counts c
+CROSS JOIN total_count t
+ORDER BY pct_of_restaurants DESC, c.COUNTRY_NAME;
+
+-- 02_online_delivery_by_country.sql
+WITH country_rest AS (
+  SELECT COUNTRY_NAME, COUNT(*) AS rest_count
+  FROM ZomatoData1
+  GROUP BY COUNTRY_NAME
+)
+SELECT z.COUNTRY_NAME,
+       COUNT(*) AS online_delivery_restaurants,
+       ROUND(100.0 * COUNT(*) / c.rest_count, 2) AS pct_with_online_delivery
+FROM ZomatoData1 z
+JOIN country_rest c
+  ON z.COUNTRY_NAME = c.COUNTRY_NAME
+WHERE UPPER(z.Has_Online_delivery) = 'YES'
+GROUP BY z.COUNTRY_NAME, c.rest_count
+ORDER BY online_delivery_restaurants DESC, z.COUNTRY_NAME;
+
+-- 03_top_indian_localities.sql
+SELECT City, Locality, COUNT(RestaurantID) AS rest_count
+FROM ZomatoData1
+WHERE COUNTRY_NAME = 'India'
+GROUP BY City, Locality
+ORDER BY rest_count DESC, City, Locality
+LIMIT 10;
+
+-- 04_popular_cuisines_connaught_place.sql
+WITH top_locality AS (
+  SELECT Locality
+  FROM ZomatoData1
+  WHERE COUNTRY_NAME = 'India'
+  GROUP BY Locality
+  ORDER BY COUNT(*) DESC
+  LIMIT 1
 ),
-CT3 AS (
-SELECT [Locality],[Cuisines] FROM [dbo].[ZomatoData1]
+split_cuisines AS (
+  SELECT TRIM(SUBSTR(Cuisines, 1, INSTR(Cuisines || ',', ',') - 1)) AS cuisine,
+         SUBSTR(Cuisines || ',', INSTR(Cuisines || ',', ',') + 1) AS rest,
+         Locality
+  FROM ZomatoData1
+  WHERE Locality = (SELECT Locality FROM top_locality)
+
+  UNION ALL
+
+  SELECT TRIM(SUBSTR(rest, 1, INSTR(rest, ',') - 1)) AS cuisine,
+         SUBSTR(rest, INSTR(rest, ',') + 1) AS rest,
+         Locality
+  FROM split_cuisines
+  WHERE rest <> ''
 )
-SELECT  A.[Locality], B.[Cuisines]
-FROM  CT2 A JOIN CT3 B
-ON A.Locality = B.[Locality]
+SELECT cuisine, COUNT(*) AS cuisine_count
+FROM split_cuisines
+WHERE cuisine <> ''
+GROUP BY cuisine
+ORDER BY cuisine_count DESC, cuisine
+LIMIT 10;
 
-
-
---MOST POPULAR FOOD IN INDIA WHERE THE MAX RESTAURANTS ARE LISTED IN ZOMATO
-CREATE VIEW VF 
-AS
-(
-SELECT [COUNTRY_NAME],[City],[Locality],N.[Cuisines] FROM [dbo].[ZomatoData1]
-CROSS APPLY (SELECT VALUE AS [Cuisines] FROM string_split([Cuisines],'|')) N
+-- 05_table_booking_top_locality.sql
+WITH top_locality AS (
+  SELECT Locality
+  FROM ZomatoData1
+  WHERE COUNTRY_NAME = 'India'
+  GROUP BY Locality
+  ORDER BY COUNT(*) DESC
+  LIMIT 1
 )
+SELECT Locality,
+       COUNT(*) AS table_booking_option
+FROM ZomatoData1
+WHERE Locality = (SELECT Locality FROM top_locality)
+  AND UPPER(Has_Table_booking) = 'YES'
+GROUP BY Locality;
 
-WITH CT1
-AS
-(
-SELECT [City],[Locality],COUNT([RestaurantID]) REST_COUNT
-FROM [dbo].[ZomatoData1]
-WHERE [COUNTRY_NAME] = 'INDIA'
-GROUP BY CITY,LOCALITY
---ORDER BY 3 DESC
-),
-CT2 AS (
-SELECT [Locality],REST_COUNT FROM CT1 WHERE REST_COUNT = (SELECT MAX(REST_COUNT) FROM CT1)
-)
-SELECT A.[Cuisines], COUNT(A.[Cuisines])
-FROM VF A JOIN CT2 B
-ON A.Locality = B.[Locality]
-GROUP BY B.[Locality],A.[Cuisines]
-ORDER BY 2 DESC
+-- 06_connaught_place_rating_table_vs_no.sql
+SELECT 'WITH_TABLE' AS table_booking_opt,
+       COUNT(*) AS total_rest,
+       ROUND(AVG(CAST(Rating AS REAL)), 2) AS avg_rating
+FROM ZomatoData1
+WHERE UPPER(Has_Table_booking) = 'YES'
+  AND Locality = 'Connaught Place'
+UNION ALL
+SELECT 'WITHOUT_TABLE' AS table_booking_opt,
+       COUNT(*) AS total_rest,
+       ROUND(AVG(CAST(Rating AS REAL)), 2) AS avg_rating
+FROM ZomatoData1
+WHERE UPPER(Has_Table_booking) = 'NO'
+  AND Locality = 'Connaught Place';
 
+-- 07_best_moderately_priced_indian_restaurants.sql
+SELECT RestaurantID, RestaurantName, City, Locality, Cuisines, Votes,
+       Average_Cost_for_two, Rating
+FROM ZomatoData1
+WHERE COUNTRY_NAME = 'India'
+  AND UPPER(Has_Table_booking) = 'YES'
+  AND UPPER(Has_Online_delivery) = 'YES'
+  AND Price_range <= 3
+  AND Votes > 1000
+  AND Average_Cost_for_two < 1000
+  AND Rating > 4
+  AND UPPER(Cuisines) LIKE '%INDIAN%'
+ORDER BY Rating DESC, Votes DESC, Average_Cost_for_two ASC
+LIMIT 10;
 
-
---WHICH LOCALITIES IN INDIA HAS THE LOWEST RESTAURANTS LISTED IN ZOMATO
-WITH CT1 AS
-(
-SELECT [City],[Locality], COUNT([RestaurantID]) REST_COUNT
-FROM [dbo].[ZomatoData1]
-WHERE [COUNTRY_NAME] = 'INDIA'
-GROUP BY [City],[Locality]
--- ORDER BY 3 DESC
-)
-SELECT * FROM CT1 WHERE REST_COUNT = (SELECT MIN(REST_COUNT) FROM CT1) ORDER BY CITY
-
-
-
---HOW MANY RESTAURANTS OFFER TABLE BOOKING OPTION IN INDIA WHERE THE MAX RESTAURANTS ARE LISTED IN ZOMATO
-WITH CT1 AS (
-SELECT [City],[Locality],COUNT([RestaurantID]) REST_COUNT
-FROM [dbo].[ZomatoData1]
-WHERE [COUNTRY_NAME] = 'INDIA'
-GROUP BY CITY,LOCALITY
---ORDER BY 3 DESC
-),
-CT2 AS (
-SELECT [Locality],REST_COUNT FROM CT1 WHERE REST_COUNT = (SELECT MAX(REST_COUNT) FROM CT1)
-),
-CT3 AS (
-SELECT [Locality],[Has_Table_booking] TABLE_BOOKING
-FROM [dbo].[ZomatoData1]
-)
-SELECT A.[Locality], COUNT(A.TABLE_BOOKING) TABLE_BOOKING_OPTION
-FROM CT3 A JOIN CT2 B
-ON A.[Locality] = B.[Locality]
-WHERE A.TABLE_BOOKING = 'YES'
-GROUP BY A.[Locality]
-
-
-
--- HOW RATING AFFECTS IN MAX LISTED RESTAURANTS WITH AND WITHOUT TABLE BOOKING OPTION (Connaught Place)
-SELECT 'WITH_TABLE' TABLE_BOOKING_OPT,COUNT([Has_Table_booking]) TOTAL_REST, ROUND(AVG([Rating]),2) AVG_RATING
-FROM [dbo].[ZomatoData1]
-WHERE [Has_Table_booking] = 'YES'
-AND [Locality] = 'Connaught Place'
-UNION
-SELECT 'WITHOUT_TABLE' TABLE_BOOKING_OPT,COUNT([Has_Table_booking]) TOTAL_REST, ROUND(AVG([Rating]),2) AVG_RATING
-FROM [dbo].[ZomatoData1]
-WHERE [Has_Table_booking] = 'NO'
-AND [Locality] = 'Connaught Place'
-
-
-
---AVG RATING OF RESTS LOCATION WISE
-SELECT [COUNTRY_NAME],[City],[Locality], 
-COUNT([RestaurantID]) TOTAL_REST ,ROUND(AVG(CAST([Rating] AS DECIMAL)),2) AVG_RATING
-FROM [dbo].[ZomatoData1]
-GROUP BY [COUNTRY_NAME],[City],[Locality]
-ORDER BY 4 DESC
-
-
-
---FINDING THE BEST RESTAURANTS WITH MODRATE COST FOR TWO IN INDIA HAVING INDIAN CUISINES
-SELECT *
-FROM [dbo].[ZomatoData1]
-WHERE [COUNTRY_NAME] = 'INDIA'
-AND [Has_Table_booking] = 'YES'
-AND [Has_Online_delivery] = 'YES'
-AND [Price_range] <= 3
-AND [Votes] > 1000
-AND [Average_Cost_for_two] < 1000
-AND [Rating] > 4
-AND [Cuisines] LIKE '%INDIA%'
-
-
-
---FIND ALL THE RESTAURANTS THOSE WHO ARE OFFERING TABLE BOOKING OPTIONS WITH PRICE RANGE AND HAS HIGH RATING
-SELECT [Price_range], COUNT([Has_Table_booking]) NO_OF_REST
-FROM [dbo].[ZomatoData1]
-WHERE [Rating] >= 4.5
-AND [Has_Table_booking] = 'YES'
-GROUP BY [Price_range] 
